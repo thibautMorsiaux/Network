@@ -161,6 +161,8 @@ if __name__ == "__main__":
                 print(f"Seq {segment.seqnum} len {segment.length}", file=sys.stderr)  # Debug
                 recieved[segment.seqnum] = segment
 
+                expected_seqnum = 0
+
                 while expected_seqnum in recieved:
                     expected_seqnum = (expected_seqnum + 1) % 2048
                 
