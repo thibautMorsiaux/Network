@@ -110,6 +110,20 @@ def connect_client(server_name: str):
     except Exception as err:
         print(f"Erreur connexion: {err}", file=sys.stderr)
         return None, None
+    
+def encode_ack(next_seqnum: int, timestamp: int) -> bytes:
+    ptype = PTYPE_ACK  
+    window = MAX_WINDOW  
+    length = 0  #contient pas de données car juste un ACK
+    
+    word = ((ptype << 30) | (window << 24) | (length << 11) | next_seqnum) & 0xffffffff
+    header_bytes = struct.pack('!II', word, timestamp & 0xffffffff)
+    
+    crc1_calc = crc32(header_bytes)
+    crc1 = struct.pack('!I', crc1_calc)
+    
+    #le paquet ACK fait 12 octets, header + crc1
+    return header_bytes + crc1
 
 if __name__ == "__main__":
     
@@ -146,6 +160,15 @@ if __name__ == "__main__":
                 segment = decode_segment(raw)
                 print(f"Seq {segment.seqnum} len {segment.length}", file=sys.stderr)  # Debug
                 recieved[segment.seqnum] = segment
+
+                while expected_seqnum in recieved:
+                    expected_seqnum = (expected_seqnum + 1) % 2048
+                
+                #envoi d'ack avec le prochain num attendu
+                ack_packet = encode_ack(expected_seqnum, segment.timestamp)
+                sock.send(ack_packet)
+                print(f"ACK envoyé, attend le seq {expected_seqnum}", file=sys.stderr)
+
                 if not segment.payload:
                     break
         except DecodeError as e:
@@ -167,5 +190,3 @@ if __name__ == "__main__":
         print(f"Erreur transfert: {e}", file=sys.stderr)
     finally:
         sock.close()
-
-
