@@ -53,10 +53,11 @@ def create_server(server_addr: str, port: int, directory: str):
                 print("Request is not in the valid format.")
                 
 
-            timestamp = int(time.time() * 1000) & 0xffffffff  # Masque 32-bit
+            timestamp = int(time.time() * 500) & 0xffffffff  # Masque 32-bit
             seqnum = 0
-            if len(payload) > 1024:
-                seq_payloads = [payload[i:i+1024] for i in range(0, len(payload), 1024)]
+            #remplacer par 500 pour pouvoir faire passer les tests link simulator (max 528 et avant on avait 1024 + header donc 1040)
+            if len(payload) > 500:
+                seq_payloads = [payload[i:i+500] for i in range(0, len(payload), 500)]
             else:
                 seq_payloads = [payload]
             # dernier seg vide ajouté pour qu'il soit géré par la window coulissante
@@ -66,6 +67,8 @@ def create_server(server_addr: str, port: int, directory: str):
             base = 0
             next_to_send = 0
             window_size = 10 
+            max_retries = 10
+            retries = 0
             sock.settimeout(0.5) #attendre les acks
 
             while base < total_chunks:
@@ -89,6 +92,7 @@ def create_server(server_addr: str, port: int, directory: str):
                     raw_ack, _ = sock.recvfrom(2048)
                     ptype, ack_seqnum = decode_ack(raw_ack)
                     if ptype == PTYPE_ACK:
+                        retries = 0
                         print(f"ACK reçu -> le client attend le seq {ack_seqnum}", file=sys.stderr)
                         #avance la base
                         expected_base_seq = base % 2048
@@ -98,6 +102,11 @@ def create_server(server_addr: str, port: int, directory: str):
                             base += (2048 - expected_base_seq) + ack_seqnum
                             
                 except socket.timeout:
+                    retries += 1
+                    if retries > max_retries:
+                        #permet de prevenir le cas ou on perd le dernier ack et que le serveur tourne dans le vide
+                        print(f"Trop de timeouts consécutifs ({max_retries})", file=sys.stderr)
+                        break
                     #si on recoit rien apres 0.5s, on recule et on renvoie
                     print("Timeout ! Aucun ACK reçu. On renvoie la fenetre.", file=sys.stderr)
                     next_to_send = base

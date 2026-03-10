@@ -152,30 +152,33 @@ if __name__ == "__main__":
         sock.send(f"GET {path}\r\n".encode('ascii'))
         sock.settimeout(2.0)
         recieved = {}
+        expected_seqnum = 0
+        eof_seqnum = None
         try:
             sock.settimeout(10.0)
             while True:
-                raw = sock.recv(2048)
-                print(f"Reçu {len(raw)} bytes", file=sys.stderr)  # Debug
-                segment = decode_segment(raw)
-                print(f"Seq {segment.seqnum} len {segment.length}", file=sys.stderr)  # Debug
-                recieved[segment.seqnum] = segment
+                try :
+                    raw = sock.recv(2048)
+                    print(f"Reçu {len(raw)} bytes", file=sys.stderr)  # Debug
+                    segment = decode_segment(raw)
+                    print(f"Seq {segment.seqnum} len {segment.length}", file=sys.stderr)  # Debug
+                    recieved[segment.seqnum] = segment
 
-                expected_seqnum = 0
+                    if not segment.payload:
+                        eof_seqnum = segment.seqnum
 
-                while expected_seqnum in recieved:
-                    expected_seqnum = (expected_seqnum + 1) % 2048
-                
-                #envoi d'ack avec le prochain num attendu
-                ack_packet = encode_ack(expected_seqnum, segment.timestamp)
-                sock.send(ack_packet)
-                print(f"ACK envoyé, attend le seq {expected_seqnum}", file=sys.stderr)
+                    while expected_seqnum in recieved:
+                        expected_seqnum = (expected_seqnum + 1) % 2048
+                    
+                    #envoi d'ack avec le prochain num attendu
+                    ack_packet = encode_ack(expected_seqnum, segment.timestamp)
+                    sock.send(ack_packet)
+                    print(f"ACK envoyé, attend le seq {expected_seqnum}", file=sys.stderr)
 
-                if not segment.payload:
-                    break
-        except DecodeError as e:
-            print(f"Erreur décodage: {e} (paquet: {len(raw)}B)", file=sys.stderr)
-            
+                    if eof_seqnum is not None and expected_seqnum == (eof_seqnum + 1) % 2048:
+                        break
+                except DecodeError as e:
+                    print(f"Erreur décodage: {e} (paquet: {len(raw)}B)", file=sys.stderr) 
         except socket.timeout:
             print("Timeout", file=sys.stderr)
             
